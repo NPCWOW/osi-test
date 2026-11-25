@@ -14,7 +14,7 @@
   --shadow:0 16px 42px rgba(25,40,85,.10);--radius:22px;
 }
 *{box-sizing:border-box}
-html{scroll-behavior:auto}
+html{scroll-behavior:auto;overflow-anchor:none}
 #quizScreen{overflow-anchor:none}
 body{margin:0;font-family:Inter,ui-sans-serif,system-ui,-apple-system,"Segoe UI",Arial,sans-serif;background:var(--bg);color:var(--text);min-height:100vh}
 button,input,select{font:inherit}
@@ -116,12 +116,21 @@ button:disabled{opacity:.45;cursor:not-allowed;transform:none!important}
 .js-ready .ios-js-warning{display:none!important}
 
 .source-note{margin-top:10px;padding-top:9px;border-top:1px solid rgba(0,0,0,.10);font-size:13px;font-weight:500;line-height:1.4;overflow-wrap:anywhere}.mobile-progress .progress-ring{width:44px;height:44px;flex:0 0 44px}.mobile-progress .progress-ring:before{width:34px;height:34px}.mobile-progress .progress-ring strong{font-size:11px}.question-kicker{overflow-wrap:anywhere}
+.mobile-nav-btn{display:none}
+@media(max-width:900px){
+  .quiz-layout{display:flex;flex-direction:column;align-items:stretch}
+  .quiz-main{order:0;width:100%}
+  .sidebar{order:1;width:100%;max-height:none;overflow:visible}
+  .number-grid{max-height:240px;overflow-y:auto;overscroll-behavior-y:contain;-webkit-overflow-scrolling:touch;padding:2px 4px 2px 2px;align-content:start}
+  .mobile-nav-btn{display:block;flex:none;border:1px solid var(--line);border-radius:10px;background:#fff;color:var(--primary2);font-size:12px;font-weight:800;padding:9px 10px}
+  .mobile-progress{flex-wrap:wrap}
+}
 </style>
 </head>
 <body>
 <div class="app-shell">
   <header class="brandbar">
-    <div class="brand"><div class="logo" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none"><path d="M6 3h9l3 3v15H6V3Z" stroke="currentColor" stroke-width="2"/><path d="M9 10h6M9 14h6M9 18h4" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></svg></div><span>Тестирование ОСИ</span></div>
+    <div class="brand"><div class="logo" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none"><path d="M6 3h9l3 3v15H6V3Z" stroke="currentColor" stroke-width="2"/><path d="M9 10h6M9 14h6M9 18h4" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></svg></div><span>Тестирование ОСИ <small style="font-size:10px;color:var(--muted);font-weight:600">v5</small></span></div>
     <button type="button" id="resumeBtn" class="mini-btn hidden">Продолжить попытку</button>
   </header>
 
@@ -169,7 +178,7 @@ button:disabled{opacity:.45;cursor:not-allowed;transform:none!important}
   </main>
 
   <main id="quizScreen" class="hidden">
-    <div class="mobile-progress"><div class="progress-ring" id="mobileRing"><strong id="mobilePct">0%</strong></div><div class="mobile-bar"><i id="mobileBarFill"></i></div><span id="mobileTimer" style="font-variant-numeric:tabular-nums;font-weight:800">Без таймера</span></div>
+    <div class="mobile-progress"><div class="progress-ring" id="mobileRing"><strong id="mobilePct">0%</strong></div><div class="mobile-bar"><i id="mobileBarFill"></i></div><span id="mobileTimer" style="font-variant-numeric:tabular-nums;font-weight:800">Без таймера</span><button type="button" id="mobileNavBtn" class="mobile-nav-btn">Номера</button></div>
     <div class="quiz-layout">
       <aside class="panel sidebar">
         <div class="side-top">
@@ -276,13 +285,19 @@ function toast(msg){const t=$('#toast');if(!t){alert(msg);return}t.textContent=m
 function histories(){try{return JSON.parse(safeGetItem(STORAGE_KEY)||'[]')}catch(err){return []}}
 function saveHistories(rows){safeSetItem(STORAGE_KEY,JSON.stringify(rows))}
 function persistActive(){if(state&&!state.finished)safeSetItem(STATE_KEY,JSON.stringify(state));else safeRemoveItem(STATE_KEY)}
-function safeScrollTop(){try{window.scrollTo({top:0,behavior:'smooth'})}catch(err){window.scrollTo(0,0)}}
+function safeScrollTop(){window.scrollTo(0,0)}
 function scrollToQuestion(){
   const card=$('.quiz-card');if(!card)return;
   const rect=card.getBoundingClientRect();
-  if(rect.top<0||rect.top>Math.min(160,window.innerHeight/3)){
-    window.scrollTo(0,Math.max(0,window.pageYOffset+rect.top-12));
-  }
+  if(rect.top<0||rect.top>Math.min(160,window.innerHeight/3))window.scrollTo(0,Math.max(0,window.pageYOffset+rect.top-12));
+}
+function preservePosition(action){
+  const y=window.pageYOffset||document.documentElement.scrollTop||0;
+  const grid=$('#numberGrid'),gy=grid.scrollTop;
+  action();
+  grid.scrollTop=gy;
+  // Restore only when rendering itself changed the viewport, not on ordinary navigation.
+  if(Math.abs(window.pageYOffset-y)>1)window.scrollTo(0,y);
 }
 function clearTimer(){if(timerHandle){clearInterval(timerHandle);timerHandle=null}}
 
@@ -374,7 +389,7 @@ function renderQuiz(){
   $('#questionKicker').innerHTML=`<span>Вопрос ${state.current+1} из ${state.questions.length}</span><span>${q.isNew?"Новый вопрос":"Исходный вопрос"} · ${escapeHTML(q.section)} №${q.sourceNumber}</span>`;
   $('#questionText').textContent=q.question;
   const optionsEl=$('#options');
-  const existing=$('.option',optionsEl);
+  const existing=$$('.option',optionsEl);
   const sameQuestion=optionsEl._renderedQuestion===q && existing.length===q.options.length;
   function optionClass(o,i){
     let cls='option';
@@ -388,7 +403,7 @@ function renderQuiz(){
   }else{
     optionsEl.innerHTML=q.options.map((o,i)=>`<button type="button" class="${optionClass(o,i)}" data-i="${i}" aria-pressed="${chosen===i}" ${checked?'disabled':''}><span class="option-letter">${o.letter}</span><span class="option-text">${escapeHTML(o.text)}</span></button>`).join('');
     optionsEl._renderedQuestion=q;
-    $('.option',optionsEl).forEach(btn=>btn.addEventListener('click',()=>selectOption(Number(btn.dataset.i))));
+    $$('.option',optionsEl).forEach(btn=>btn.addEventListener('click',()=>selectOption(Number(btn.dataset.i))));
   }
   const fb=$('#feedback');
   fb.className='feedback hidden';
@@ -415,22 +430,22 @@ function renderNumberGrid(){
     else if(state.answers[i]!==null)cls+=' answered';
     return cls;
   }
-  const buttons=$('.qnum',grid);
+  const buttons=$$('.qnum',grid);
   if(buttons.length===state.questions.length){
     buttons.forEach((b,i)=>{b.className=numberClass(state.questions[i],i);b.setAttribute('aria-current',i===state.current?'step':'false');});
   }else{
     grid.innerHTML=state.questions.map((q,i)=>`<button type="button" class="${numberClass(q,i)}" data-i="${i}" aria-current="${i===state.current?'step':'false'}" aria-label="Перейти к вопросу ${i+1}">${i+1}</button>`).join('');
-    $('.qnum',grid).forEach(b=>b.addEventListener('click',()=>goTo(Number(b.dataset.i))));
+    $$('.qnum',grid).forEach(b=>b.addEventListener('click',()=>goTo(Number(b.dataset.i))));
   }
 }
-function selectOption(i){state.answers[state.current]=i;renderQuiz()}
+function selectOption(i){if(state.checked[state.current])return;state.answers[state.current]=i;preservePosition(renderQuiz)}
 function checkAnswer(){
   if(state.answers[state.current]===null){toast('Сначала выберите ответ');return}
   if(!Array.isArray(state.feedbackMessages))state.feedbackMessages=Array(state.questions.length).fill(null);
   const q=state.questions[state.current];
   const ok=(q.options[state.answers[state.current]] && q.options[state.answers[state.current]].correct);
   state.feedbackMessages[state.current]=randomMessage(ok?CORRECT_MESSAGES:WRONG_MESSAGES);
-  state.checked[state.current]=true;renderQuiz();
+  state.checked[state.current]=true;preservePosition(renderQuiz);
 }
 function goTo(i){state.current=clamp(i,0,state.questions.length-1);renderQuiz();scrollToQuestion()}
 function nextQuestion(){
@@ -455,7 +470,7 @@ function finishQuiz(timeExpired=false){
   const rows=histories();rows.unshift(record);saveHistories(rows.slice(0,100));
   safeRemoveItem(STATE_KEY);
   $('#quizScreen').classList.add('hidden');$('#resultScreen').classList.remove('hidden');
-  renderResult(record);renderDashboard();
+  renderResult(record);renderDashboard();safeScrollTop();
 }
 function renderResult(r){
   $('#resultCircle').style.setProperty('--p',r.percent);$('#resultPercent').textContent=`${r.percent}%`;
@@ -500,6 +515,7 @@ function exportHistory(){
 }
 function clearHistory(){if(confirm('Удалить всю историю результатов на этом устройстве?')){saveHistories([]);renderDashboard();toast('История очищена')}}
 
+$('#mobileNavBtn').addEventListener('click',function(){const nav=$('.sidebar');window.scrollTo(0,Math.max(0,window.pageYOffset+nav.getBoundingClientRect().top-12));});
 $('#startBtn').addEventListener('click',startQuizFromButton);
 $('#resumeBtn').addEventListener('click',resumeQuiz);
 $('#checkBtn').addEventListener('click',checkAnswer);
